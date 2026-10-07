@@ -933,6 +933,13 @@ static void free_ssl_state(JNIEnv* e, tcn_ssl_state_t* state) {
     tcn_ssl_task_free(e, state->ssl_task);
     state->ssl_task = NULL;
 
+#ifdef OPENSSL_IS_BORINGSSL
+    if (state->selected_credential != NULL) {
+        SSL_CREDENTIAL_free((SSL_CREDENTIAL*) state->selected_credential);
+        state->selected_credential = NULL;
+    }
+#endif
+
     // Free the tcn_ssl_state_t itself as it was allocated via OPENSSL_malloc(...) before
     //
     // https://github.com/netty/netty-tcnative/issues/532
@@ -2763,6 +2770,13 @@ TCN_IMPLEMENT_CALL(jlong, SSL, getSelectedCredential)(TCN_STDARGS, jlong ssl) {
     SSL *ssl_ = J2P(ssl, SSL *);
     TCN_CHECK_NULL(ssl_, ssl, 0);
     const SSL_CREDENTIAL* credential = SSL_get0_selected_credential(ssl_);
+    if (credential == NULL) {
+        // Handshake state is gone once the handshake completed, use the credential cached by ssl_info_callback.
+        tcn_ssl_state_t* state = tcn_SSL_get_app_state(ssl_);
+        if (state != NULL) {
+            credential = state->selected_credential;
+        }
+    }
     if (credential == NULL) {
         return 0;
     }

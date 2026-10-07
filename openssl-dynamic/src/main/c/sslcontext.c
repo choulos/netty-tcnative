@@ -189,6 +189,22 @@ static void ssl_info_callback(const SSL *ssl, int where, int ret) {
             state->handshakeCount++;
         }
     }
+#ifdef OPENSSL_IS_BORINGSSL
+    if (0 != (where & SSL_CB_HANDSHAKE_DONE)) {
+        // The selection lives in the handshake state, which BoringSSL frees before SSL_do_handshake returns, so it
+        // must be sampled here. On renegotiation the previous ref is replaced by the most recent selection.
+        if ((state = tcn_SSL_get_app_state(ssl)) != NULL) {
+            const SSL_CREDENTIAL* credential = SSL_get0_selected_credential(ssl);
+            if (credential != NULL) {
+                SSL_CREDENTIAL_up_ref((SSL_CREDENTIAL*) credential);
+                if (state->selected_credential != NULL) {
+                    SSL_CREDENTIAL_free((SSL_CREDENTIAL*) state->selected_credential);
+                }
+                state->selected_credential = credential;
+            }
+        }
+    }
+#endif
 }
 
 /* Initialize server context */
