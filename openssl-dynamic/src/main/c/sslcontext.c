@@ -37,6 +37,7 @@
 #include "ssl_private.h"
 #include <stdint.h>
 #include "sslcontext.h"
+#include "sslcredential.h"
 #include "cert_compress.h"
 
 #define SSLCONTEXT_CLASSNAME "io/netty/internal/tcnative/SSLContext"
@@ -189,6 +190,15 @@ static void ssl_info_callback(const SSL *ssl, int where, int ret) {
             state->handshakeCount++;
         }
     }
+#ifdef OPENSSL_IS_BORINGSSL
+    if (0 != (where & SSL_CB_HANDSHAKE_DONE)) {
+        // BoringSSL frees the handshake state (and its selected credential) before SSL_do_handshake returns,
+        // so record the selection here. Assign unconditionally so a later handshake without one clears it.
+        if ((state = tcn_SSL_get_app_state(ssl)) != NULL) {
+            state->selected_credential_id = tcn_SSL_CREDENTIAL_get_id(SSL_get0_selected_credential(ssl));
+        }
+    }
+#endif
 }
 
 /* Initialize server context */

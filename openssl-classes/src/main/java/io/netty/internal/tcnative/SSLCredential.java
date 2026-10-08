@@ -15,6 +15,8 @@
  */
 package io.netty.internal.tcnative;
 
+import java.util.concurrent.atomic.AtomicLong;
+
 /**
  * SSL_CREDENTIAL management for BoringSSL.
  * 
@@ -32,6 +34,8 @@ package io.netty.internal.tcnative;
  */
 public final class SSLCredential {
 
+    private static final AtomicLong NEXT_ID = new AtomicLong();
+
     private SSLCredential() { }
 
     /**
@@ -44,7 +48,43 @@ public final class SSLCredential {
      * @return the SSL_CREDENTIAL instance (SSL_CREDENTIAL *)
      * @throws Exception if an error occurred
      */
-    public static native long newX509() throws Exception;
+    public static long newX509() throws Exception {
+        return assignId(newX509Native());
+    }
+
+    private static native long newX509Native() throws Exception;
+
+    private static long assignId(long cred) throws Exception {
+        try {
+            setId0(cred, NEXT_ID.incrementAndGet());
+        } catch (Throwable t) {
+            // Don't leak the credential if tagging fails.
+            free(cred);
+            throw t;
+        }
+        return cred;
+    }
+
+    /**
+     * Assign the id of an SSL_CREDENTIAL. A credential can only be assigned an id once.
+     *
+     * @param cred the SSL_CREDENTIAL instance (SSL_CREDENTIAL *)
+     * @param id the id, which must be positive
+     * @throws IllegalArgumentException if {@code id} is not positive
+     * @throws IllegalStateException if the credential already has an id
+     */
+    static native void setId0(long cred, long id);
+
+    /**
+     * Get the id that was assigned to an SSL_CREDENTIAL when it was created by {@link #newX509()} or
+     * {@link #newDelegated()}.
+     *
+     * <p>This is a BoringSSL-specific feature.</p>
+     *
+     * @param cred the SSL_CREDENTIAL instance (SSL_CREDENTIAL *)
+     * @return the id, or {@code 0} if none was assigned
+     */
+    public static native long getId(long cred);
 
     /**
      * Increment the reference count of an SSL_CREDENTIAL.
@@ -184,7 +224,11 @@ public final class SSLCredential {
      * @return the delegated SSL_CREDENTIAL instance (SSL_CREDENTIAL *)
      * @throws Exception if an error occurred
      */
-    public static native long newDelegated() throws Exception;
+    public static long newDelegated() throws Exception {
+        return assignId(newDelegatedNative());
+    }
+
+    private static native long newDelegatedNative() throws Exception;
 
     /**
      * Set the delegated credential for an SSL_CREDENTIAL.

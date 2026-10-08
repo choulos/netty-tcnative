@@ -411,6 +411,9 @@ struct tcn_ssl_state_t {
     // len < sk_CRYPTO_BUFFER_num(chain) check (both locals are 0/NULL there).
     int task_array_len;
     int task_chain_num;
+#ifdef OPENSSL_IS_BORINGSSL
+    jlong selected_credential_id;
+#endif
 };
 
 #define TCN_GET_SSL_CTX(ssl, C)                             \
