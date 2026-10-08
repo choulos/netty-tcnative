@@ -997,10 +997,7 @@ public final class SSL {
      * <p>This is a BoringSSL-specific feature. See 
      * <a href="https://commondatastorage.googleapis.com/chromium-boringssl-docs/ssl.h.html#SSL_get0_selected_credential">SSL_get0_selected_credential</a>
      * for detailed documentation.</p>
-     *
-     * <p>Once a handshake has completed this returns the credential selected during the most recent completed
-     * handshake. The returned pointer is borrowed and stays valid until {@link #freeSSL(long)}; do not free it.</p>
-     *
+     * 
      * @param ssl the SSL instance (SSL *)
      * @return the selected credential (SSL_CREDENTIAL *) or {@code 0} if none
      * @throws Exception if an error occurred
