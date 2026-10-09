@@ -61,6 +61,7 @@ public class SSLCredentialIdTest {
     public void freshSslHasNoSelectedCredentialId() throws Exception {
         long ctx = SSLContext.make(SSL.SSL_PROTOCOL_TLSV1_2, SSL.SSL_MODE_SERVER);
         try {
+            SSLContext.setRecordSelectedCredential(ctx, true);
             long ssl = SSL.newSSL(ctx, true);
             try {
                 assertEquals(0, SSL.getSelectedCredentialId(ssl));
