@@ -22,7 +22,6 @@ import java.io.File;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SSLCredentialIdTest {
@@ -55,29 +54,6 @@ public class SSLCredentialIdTest {
         } finally {
             SSLCredential.free(x509);
             SSLCredential.free(delegated);
-        }
-    }
-
-    @Test
-    public void idCannotBeReassigned() throws Exception {
-        long cred = SSLCredential.newX509();
-        try {
-            long id = SSLCredential.getId(cred);
-            assertThrows(IllegalStateException.class, () -> SSLCredential.setId0(cred, id + 1));
-            assertEquals(id, SSLCredential.getId(cred));
-        } finally {
-            SSLCredential.free(cred);
-        }
-    }
-
-    @Test
-    public void nonPositiveIdIsRejected() throws Exception {
-        long cred = SSLCredential.newX509();
-        try {
-            assertThrows(IllegalArgumentException.class, () -> SSLCredential.setId0(cred, 0));
-            assertThrows(IllegalArgumentException.class, () -> SSLCredential.setId0(cred, -1));
-        } finally {
-            SSLCredential.free(cred);
         }
     }
 

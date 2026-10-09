@@ -24,6 +24,7 @@
 
 
 #include "tcn.h"
+#include "apr_atomic.h"
 #include "ssl_private.h"
 #include "sslcredential.h"
 
@@ -39,26 +40,38 @@ static void throw_openssl_error(JNIEnv* env, const char* msg) {
 }
 
 static int tcn_SSL_CREDENTIAL_id_idx = -1;
-
-typedef char tcn_SSL_CREDENTIAL_id_requires_64bit_pointers[sizeof(void*) >= sizeof(jlong) ? 1 : -1];
+static volatile apr_uint32_t tcn_SSL_CREDENTIAL_next_id = 0;
 
 // The id is a scalar packed into the ex_data slot, so no free callback is needed.
 jlong tcn_SSL_CREDENTIAL_get_id(const SSL_CREDENTIAL* cred) {
     if (cred == NULL || tcn_SSL_CREDENTIAL_id_idx < 0) {
         return 0;
     }
-    return (jlong)(intptr_t) SSL_CREDENTIAL_get_ex_data(cred, tcn_SSL_CREDENTIAL_id_idx);
+    return (jlong)(uintptr_t) SSL_CREDENTIAL_get_ex_data(cred, tcn_SSL_CREDENTIAL_id_idx);
+}
+
+static SSL_CREDENTIAL* assign_id(JNIEnv* e, SSL_CREDENTIAL* cred) {
+    apr_uint32_t id;
+    do {
+        id = apr_atomic_inc32(&tcn_SSL_CREDENTIAL_next_id) + 1;
+    } while (id == 0);
+    if (!SSL_CREDENTIAL_set_ex_data(cred, tcn_SSL_CREDENTIAL_id_idx, (void*)(uintptr_t) id)) {
+        SSL_CREDENTIAL_free(cred);
+        throw_openssl_error(e, "Failed to set SSL_CREDENTIAL id");
+        return NULL;
+    }
+    return cred;
 }
 #endif
 
 
 
 // Core SSL_CREDENTIAL functions
-TCN_IMPLEMENT_CALL(jlong, SSLCredential, newX509Native)(TCN_STDARGS) {
+TCN_IMPLEMENT_CALL(jlong, SSLCredential, newX509)(TCN_STDARGS) {
 #ifdef OPENSSL_IS_BORINGSSL
     SSL_CREDENTIAL* cred = SSL_CREDENTIAL_new_x509();
     TCN_CHECK_NULL(cred, credential, 0);
-    return (jlong)(intptr_t)cred;
+    return (jlong)(intptr_t)assign_id(e, cred);
 #else
     tcn_ThrowUnsupportedOperationException(e, "SSL_CREDENTIAL API not available.");
     return 0;
@@ -80,29 +93,6 @@ TCN_IMPLEMENT_CALL(void, SSLCredential, free)(TCN_STDARGS, jlong cred) {
     SSL_CREDENTIAL* c = (SSL_CREDENTIAL*)(intptr_t)cred;
     if (c != NULL) {
         SSL_CREDENTIAL_free(c);
-    }
-#else
-    tcn_ThrowUnsupportedOperationException(e, "SSL_CREDENTIAL API not available.");
-#endif
-}
-
-TCN_IMPLEMENT_CALL(void, SSLCredential, setId0)(TCN_STDARGS, jlong cred, jlong id) {
-#ifdef OPENSSL_IS_BORINGSSL
-    SSL_CREDENTIAL* c = (SSL_CREDENTIAL*)(intptr_t)cred;
-    TCN_CHECK_NULL(c, credential, /* void */);
-    if (id <= 0) {
-        tcn_ThrowIllegalArgumentException(e, "credential id must be positive");
-        return;
-    }
-    if (tcn_SSL_CREDENTIAL_get_id(c) != 0) {
-        jclass ise = (*e)->FindClass(e, "java/lang/IllegalStateException");
-        if (ise != NULL) {
-            (*e)->ThrowNew(e, ise, "credential already has an id");
-        }
-        return;
-    }
-    if (!SSL_CREDENTIAL_set_ex_data(c, tcn_SSL_CREDENTIAL_id_idx, (void*)(intptr_t) id)) {
-        throw_openssl_error(e, "Failed to set SSL_CREDENTIAL id");
     }
 #else
     tcn_ThrowUnsupportedOperationException(e, "SSL_CREDENTIAL API not available.");
@@ -340,14 +330,14 @@ TCN_IMPLEMENT_CALL(void, SSLCredential, setTrustAnchorId)(TCN_STDARGS, jlong cre
 }
 
 // Delegated credentials
-TCN_IMPLEMENT_CALL(jlong, SSLCredential, newDelegatedNative)(TCN_STDARGS) {
+TCN_IMPLEMENT_CALL(jlong, SSLCredential, newDelegated)(TCN_STDARGS) {
 #ifdef OPENSSL_IS_BORINGSSL
     SSL_CREDENTIAL* credential = SSL_CREDENTIAL_new_delegated();
     if (credential == NULL) {
         throw_openssl_error(e, "Failed to create delegated SSL_CREDENTIAL");
         return 0;
     }
-    return (jlong)(intptr_t)credential;
+    return (jlong)(intptr_t)assign_id(e, credential);
 #else
     tcn_ThrowUnsupportedOperationException(e, "SSL_CREDENTIAL API not available.");
     return 0;
@@ -389,10 +379,9 @@ TCN_IMPLEMENT_CALL(void, SSLCredential, setDelegatedCredential)(TCN_STDARGS, jlo
 // JNI Method Registration Table Begin
 static const JNINativeMethod method_table[] = {
     // Core functions
-    { TCN_METHOD_TABLE_ENTRY(newX509Native, ()J, SSLCredential) },
+    { TCN_METHOD_TABLE_ENTRY(newX509, ()J, SSLCredential) },
     { TCN_METHOD_TABLE_ENTRY(upRef, (J)V, SSLCredential) },
     { TCN_METHOD_TABLE_ENTRY(free, (J)V, SSLCredential) },
-    { TCN_METHOD_TABLE_ENTRY(setId0, (JJ)V, SSLCredential) },
     { TCN_METHOD_TABLE_ENTRY(getId, (J)J, SSLCredential) },
     
     // Configuration
@@ -408,7 +397,7 @@ static const JNINativeMethod method_table[] = {
     { TCN_METHOD_TABLE_ENTRY(setTrustAnchorId, (J[B)V, SSLCredential) },
     
     // Delegated credentials
-    { TCN_METHOD_TABLE_ENTRY(newDelegatedNative, ()J, SSLCredential) },
+    { TCN_METHOD_TABLE_ENTRY(newDelegated, ()J, SSLCredential) },
     { TCN_METHOD_TABLE_ENTRY(setDelegatedCredential, (J[B)V, SSLCredential) }
 };
 
